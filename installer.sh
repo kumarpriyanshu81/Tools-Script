@@ -1,69 +1,82 @@
 #!/bin/bash
 
-# Function to install tools using package managers
-install_tools() {
-    local tools=("$@")
-    for tool in "${tools[@]}"; do
-        sudo $PKG_MANAGER install -y "$tool"
-    done
-}
+# Define installation directories
+TOOLS_DIR="$HOME/tools"
+BIN_DIR="$HOME/.local/bin"
 
-# Detect OS
-if [[ -f /etc/os-release ]]; then
-    . /etc/os-release
-    case "$ID" in
-        arch)
-            PKG_MANAGER="pacman -S --noconfirm"
-            TOOLS=(nmap sqlmap hydra john hashcat aircrack-ng wfuzz gobuster nikto metasploit enum4linux smbclient crackmapexec dirb subfinder dnsrecon whatweb ffuf testssl.sh waybackurls seclists feroxbuster impacket wordlists)
-            AUR_TOOLS=(naabu-bin nuclei-bin amass httprobe gf puredns)
-            ;;
-        ubuntu|debian|kali)
-            PKG_MANAGER="apt-get"
-            TOOLS=(nmap sqlmap hydra john hashcat aircrack-ng wfuzz gobuster nikto metasploit enum4linux smbclient crackmapexec dirb subfinder dnsrecon whatweb ffuf testssl.sh waybackurls seclists feroxbuster impacket wordlists)
-            ;;
-        fedora)
-            PKG_MANAGER="dnf"
-            TOOLS=(nmap sqlmap hydra john hashcat aircrack-ng wfuzz gobuster nikto metasploit enum4linux smbclient crackmapexec dirb subfinder dnsrecon whatweb ffuf testssl.sh waybackurls seclists feroxbuster impacket wordlists)
-            ;;
-        *)
-            echo "Unsupported distribution: $ID"
-            exit 1
-            ;;
-    esac
+# Create necessary directories
+mkdir -p "$TOOLS_DIR" "$BIN_DIR"
+
+# Detect package manager
+if command -v apt >/dev/null 2>&1; then
+    PKG_MANAGER="apt"
+    sudo apt update && sudo apt install -y curl wget git python3-pip nmap ffuf whatweb
+elif command -v pacman >/dev/null 2>&1; then
+    PKG_MANAGER="pacman"
+    sudo pacman -Sy --noconfirm curl wget git python-pip nmap ffuf whatweb
+elif command -v dnf >/dev/null 2>&1; then
+    PKG_MANAGER="dnf"
+    sudo dnf install -y curl wget git python3-pip nmap ffuf whatweb
 else
-    echo "Cannot detect OS. Exiting."
+    echo "Unsupported package manager. Install dependencies manually."
     exit 1
 fi
 
-# Update package manager
-sudo $PKG_MANAGER update && sudo $PKG_MANAGER upgrade -y
-
-# Install essential dependencies
-install_tools git wget curl python3 python3-pip
-
-# Install cybersecurity tools
-install_tools "${TOOLS[@]}"
-
-# Special handling for Arch Linux AUR tools
-if [[ "$ID" == "arch" ]]; then
-    if ! command -v paru &> /dev/null; then
-        git clone https://aur.archlinux.org/paru-bin.git
-        cd paru-bin || exit
-        makepkg -si --noconfirm
-        cd ..
-        rm -rf paru-bin
-    fi
-    for aur_tool in "${AUR_TOOLS[@]}"; do
-        paru -S --noconfirm "$aur_tool"
-    done
+# Install Go
+if ! command -v go &>/dev/null; then
+    echo "Installing Go..."
+    wget -q https://go.dev/dl/go1.21.5.linux-amd64.tar.gz -O go.tar.gz
+    sudo tar -C /usr/local -xzf go.tar.gz
+    rm go.tar.gz
+    echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> ~/.bashrc
+    echo 'export GOPATH=$HOME/go' >> ~/.bashrc
+    source ~/.bashrc
 fi
 
-# Clean up
-if [[ "$ID" == "arch" ]]; then
-    sudo pacman -Rns $(pacman -Qdtq) --noconfirm
-else
-    sudo $PKG_MANAGER autoremove -y && sudo $PKG_MANAGER clean -y
-fi
+# Install Subdomain Enumeration Tools
+echo "Installing Subdomain Enumeration tools..."
+go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+go install -v github.com/tomnomnom/assetfinder@latest
+go install -v github.com/owasp-amass/amass/v4/...@latest
 
-# Display installed tools
-echo "\nAll tools installed successfully!"
+# Install Naabu for Port Scanning
+echo "Installing Naabu..."
+go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+
+# Install Directory Brute-forcing Tools
+echo "Installing Dirsearch..."
+git clone https://github.com/maurosoria/dirsearch.git "$TOOLS_DIR/dirsearch"
+ln -sf "$TOOLS_DIR/dirsearch/dirsearch.py" "$BIN_DIR/dirsearch"
+
+# Install Tech Stack Detection Tools
+echo "Installing Wappalyzer..."
+git clone https://github.com/AliasIO/wappalyzer.git "$TOOLS_DIR/wappalyzer"
+cd "$TOOLS_DIR/wappalyzer" && npm install && cd -
+
+# Install Screenshot Capturing Tools
+echo "Installing Gowitness..."
+go install -v github.com/sensepost/gowitness@latest
+
+# Install Parameter Discovery Tools
+echo "Installing Waybackurls, GF, and Katana..."
+go install -v github.com/tomnomnom/waybackurls@latest
+go install -v github.com/tomnomnom/gf@latest
+go install -v github.com/projectdiscovery/katana/cmd/katana@latest
+
+# Install JS File Scraping Tools
+echo "Installing GetJS and LinkFinder..."
+go install -v github.com/003random/getJS@latest
+git clone https://github.com/GerbenJavado/LinkFinder.git "$TOOLS_DIR/LinkFinder"
+pip3 install -r "$TOOLS_DIR/LinkFinder/requirements.txt"
+ln -sf "$TOOLS_DIR/LinkFinder/linkfinder.py" "$BIN_DIR/linkfinder"
+
+# Install Nuclei for Automated Scanning
+echo "Installing Nuclei..."
+go install -v github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest
+
+# Add tools to PATH
+echo 'export PATH=$PATH:$HOME/.local/bin:$HOME/go/bin' >> ~/.bashrc
+source ~/.bashrc
+
+echo "✅ Installation Complete! Run your tools from anywhere."
+
